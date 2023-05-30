@@ -19,9 +19,28 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import web3
 from eth_utils import function_signature_to_4byte_selector
-
 from ethereum_dasm.evmdasm import EvmCode, Contract
+
+# w3 = web3.Web3(web3.HTTPProvider('http://34.93.183.233'))
+abi = [{
+    "constant": True,
+    "inputs": [{
+        "internalType": "bytes4",
+        "name": "interfaceId",
+        "type": "bytes4"
+    }],
+    "name": "supportsInterface",
+    "outputs": [{
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+    }],
+    "payable": False,
+    "stateMutability": "view",
+    "type": "function"
+}]
 
 
 class EthContractService:
@@ -31,12 +50,15 @@ class EthContractService:
         if bytecode is not None:
             evm_code = EvmCode(contract=Contract(bytecode=bytecode), static_analysis=False, dynamic_analysis=False)
             evm_code.disassemble(bytecode)
+            tmp = []
             basic_blocks = evm_code.basicblocks
             if basic_blocks and len(basic_blocks) > 0:
-                init_block = basic_blocks[0]
-                instructions = init_block.instructions
-                push4_instructions = [inst for inst in instructions if inst.name == 'PUSH4']
-                return sorted(list(set('0x' + inst.operand for inst in push4_instructions)))
+                for i in range(len(basic_blocks)):
+                    init_block = basic_blocks[i]
+                    instructions = init_block.instructions
+                    push4_instructions = [inst for inst in instructions if inst.name == 'PUSH4']
+                    tmp = tmp + list(set('0x' + inst.operand for inst in push4_instructions))
+                return sorted(list(set(tmp)))
             else:
                 return []
         else:
@@ -62,12 +84,14 @@ class EthContractService:
     # transferFrom(address,address,uint256)
     # safeTransferFrom(address,address,uint256)
     # safeTransferFrom(address,address,uint256,bytes)
-    def is_erc721_contract(self, function_sighashes):
-        c = ContractWrapper(function_sighashes)
-        return c.implements('balanceOf(address)') and \
-               c.implements('ownerOf(uint256)') and \
-               c.implements_any_of('transfer(address,uint256)', 'transferFrom(address,address,uint256)') and \
-               c.implements('approve(address,uint256)')
+    def is_erc721_contract(self, contract_address, w3):
+
+        cont = w3.eth.contract(address=web3.Web3.toChecksumAddress(contract_address), abi=abi)
+        try:
+            b = cont.functions.supportsInterface(web3.Web3.toHex(0x80ac58cd)).call()
+            return b
+        except:
+            return False
 
 
 def clean_bytecode(bytecode):
